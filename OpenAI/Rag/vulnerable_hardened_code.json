@@ -1,0 +1,151 @@
+{
+  "labs": [
+    {
+      "name": "Doodle Drive",
+      "category": "A01: Broken Access Control",
+      "vulnerable_code": "app.get('/file', async (req,res)=>{ const id=req.query.id; const row=await db.get(`SELECT * FROM files WHERE id = ${id}`); return row?res.json(row):res.sendStatus(404); });",
+      "verification": "it('blocks cross-user file access', async ()=>{ const alice=await loginAs('alice'); const bobFile=await idOf('bob','file1'); const r=await alice.get(`/file?id=${bobFile}`); expect(r.status).toBe(403); });",
+      "hardened_code": "app.get('/file', requireAuth, async (req,res)=>{ const id=Number(req.query.id); const uid=req.user.id; const row=await db.get('SELECT * FROM files WHERE id=? AND owner_id=?',[id,uid]); if(!row) return res.sendStatus(403); res.json(row); });"
+    },
+    {
+      "name": "Faster Than Light",
+      "category": "A05: Security Misconfiguration",
+      "vulnerable_code": "app.post('/checkout/step2', (req,res)=>{ if(req.body.clientFlag==='ok') return res.json({ok:true}); res.status(400).json({ok:false}); });",
+      "verification": "it('requires server-side state validation', async ()=>{ const r=await request(app).post('/checkout/step2').send({clientFlag:'ok'}); expect([400,403]).toContain(r.status); });",
+      "hardened_code": "app.post('/checkout/step2', requireAuth, async (req,res)=>{ const s=await getServerState(req.session.id); if(s.step!=='step1-complete') return res.sendStatus(409); await setState(req.session.id,'step2-complete'); res.json({ok:true}); });"
+    },
+    {
+      "name": "Poison Apples",
+      "category": "A05: Security Misconfiguration",
+      "vulnerable_code": "app.post('/settings/email', requireAuth, async (req,res)=>{ await db.run('UPDATE users SET email=? WHERE id=?',[req.body.email,req.user.id]); res.json({ok:true}); });",
+      "verification": "it('rejects missing CSRF token', async ()=>{ const r=await alice.post('/settings/email').send({email:'a@b.c'}); expect([403,419]).toContain(r.status); });",
+      "hardened_code": "import csrf from 'csurf'; app.use(csrf({cookie:true})); app.post('/settings/email', requireAuth, (req,res)=>{ res.json({ok:true}); });"
+    },
+    {
+      "name": "Nuclear Winter",
+      "category": "A05: Security Misconfiguration",
+      "vulnerable_code": "app.get('/admin', (req,res)=>{ if(req.cookies.role==='admin') return res.send('ok'); res.sendStatus(403); });",
+      "verification": "it('denies tampered cookie claims', async ()=>{ const r=await request(app).get('/admin').set('Cookie','role=admin'); expect(r.status).toBe(403); });",
+      "hardened_code": "import cookieParser from 'cookie-parser'; app.use(cookieParser(process.env.COOKIE_SECRET)); app.get('/admin',(req,res)=>{ const role=req.signedCookies.role; if(role!=='admin') return res.sendStatus(403); res.send('ok'); });"
+    },
+    {
+      "name": "Bad Teacher",
+      "category": "A01: Broken Access Control",
+      "vulnerable_code": "app.get('/marksheet', requireAuth, async (req,res)=>{ const sid=req.query.studentId; const ms=await db.get(`SELECT * FROM marks WHERE student_id=${sid}`); res.json(ms||{}); });",
+      "verification": "it('limits teachers to their classes', async ()=>{ const t=await loginAs('teacherA'); const other=await studentId('classB'); const r=await t.get(`/marksheet?studentId=${other}`); expect(r.status).toBe(403); });",
+      "hardened_code": "app.get('/marksheet', requireAuth, async (req,res)=>{ const sid=Number(req.query.studentId); const tid=req.user.id; const ms=await db.get('SELECT m.* FROM marks m JOIN classes c ON m.class_id=c.id WHERE m.student_id=? AND c.teacher_id=?',[sid,tid]); if(!ms) return res.sendStatus(403); res.json(ms); });"
+    },
+    {
+      "name": "Into the Shadows",
+      "category": "A07: Identification & Authentication Failures",
+      "vulnerable_code": "app.post('/mfa/verify',(req,res)=>{ if(req.body.code===cache.get(req.body.user)) return res.json({ok:true}); res.status(401).json({ok:false}); }); // no tie to session/nonce",
+      "verification": "it('requires bound challenge to session', async ()=>{ const r=await request(app).post('/mfa/verify').send({user:'alice',code:'123456'}); expect([401,403]).toContain(r.status); });",
+      "hardened_code": "app.post('/mfa/verify', requireAuth, (req,res)=>{ const chal=session.get(req.session.id,'mfa'); if(!chal || chal.userId!==req.user.id) return res.sendStatus(403); const ok=timingSafeEqual(req.body.code, chal.code); if(!ok) return res.status(401).json({ok:false}); session.clear(req.session.id,'mfa'); res.json({ok:true}); });"
+    },
+    {
+      "name": "Pong",
+      "category": "A04: Insecure Design",
+      "vulnerable_code": "app.post('/score',(req,res)=>{ // trusts client score\n  db.run('INSERT INTO scores(user,score) VALUES(?,?)',[req.body.user, req.body.score]); res.json({ok:true}); });",
+      "verification": "it('rejects impossible scores', async ()=>{ const r=await request(app).post('/score').send({user:'u',score:999999}); expect([400,422]).toContain(r.status); });",
+      "hardened_code": "app.post('/score', requireAuth, (req,res)=>{ const s=Number(req.body.score); if(!Number.isInteger(s) || s<0 || s>MAX_SCORE) return res.sendStatus(422); // cross-check with server-side rules/game state if available\n  db.run('INSERT INTO scores(user,score) VALUES(?,?)',[req.user.id,s]); res.json({ok:true}); });"
+    },
+    {
+      "name": "Biography",
+      "category": "A03: Injection (Stored XSS)",
+      "vulnerable_code": "app.get('/profile', requireAuth, async (req,res)=>{ const u=await db.get('SELECT bio FROM users WHERE id=?',[req.user.id]); res.send(`<div class='bio'>${u.bio}</div>`); });",
+      "verification": "it('escapes stored bio', async ()=>{ await alice.post('/bio').send({bio:'<img onerror=alert(1)>'}); const r=await alice.get('/profile'); expect(r.text).toContain('&lt;img'); });",
+      "hardened_code": "import he from 'he'; app.get('/profile', requireAuth, async (req,res)=>{ const u=await db.get('SELECT bio FROM users WHERE id=?',[req.user.id]); const safe=he.encode(u?.bio||'',{useNamedReferences:true}); res.send(`<div class='bio'>${safe}</div>`); });"
+    },
+    {
+      "name": "XSS Basics",
+      "category": "A03: Injection (Reflected XSS)",
+      "vulnerable_code": "<div id='out'></div><script>const q=new URLSearchParams(location.search).get('q')||''; document.getElementById('out').innerHTML=q;</script>",
+      "verification": "it('renders as text',()=>{ out.textContent='<b>hi</b>'; expect(out.innerHTML).toBe('&lt;b&gt;hi&lt;/b&gt;'); });",
+      "hardened_code": "<div id='out'></div><script>const q=new URLSearchParams(location.search).get('q')||''; document.getElementById('out').textContent=q;</script>"
+    },
+    {
+      "name": "Christmas Workshop",
+      "category": "A03: Injection (DOM XSS)",
+      "vulnerable_code": "function renderItem(v){ document.querySelector('#item').innerHTML=v; }",
+      "verification": "it('uses safe DOM APIs',()=>{ renderSafe('<img onerror=1>'); expect(document.querySelector('#item').innerHTML).toBe('&lt;img onerror=1&gt;'); });",
+      "hardened_code": "function renderSafe(v){ const el=document.querySelector('#item'); while(el.firstChild) el.removeChild(el.firstChild); el.appendChild(document.createTextNode(String(v))); }"
+    },
+    {
+      "name": "Fakebook v1",
+      "category": "A03: Injection (Stored XSS)",
+      "vulnerable_code": "app.get('/feed', async (req,res)=>{ const posts=await db.all('SELECT body FROM posts'); res.send(posts.map(p=>`<p>${p.body}</p>`).join('')); });",
+      "verification": "it('escapes post bodies', async ()=>{ await makePost('<script>1</script>'); const r=await request(app).get('/feed'); expect(r.text).toContain('&lt;script&gt;'); });",
+      "hardened_code": "import he from 'he'; app.get('/feed', async (req,res)=>{ const posts=await db.all('SELECT body FROM posts'); res.send(posts.map(p=>`<p>${he.encode(p.body||'')}</p>`).join('')); });"
+    },
+    {
+      "name": "Syndica",
+      "category": "A03: Injection (Client Template Injection)",
+      "vulnerable_code": "const tpl=(s)=>`<li>${s}</li>`; document.querySelector('#list').innerHTML = items.map(tpl).join(''); // items are untrusted",
+      "verification": "it('escapes template output',()=>{ const html=safeRender(['<img onerror=1>']); expect(html).toContain('&lt;img'); });",
+      "hardened_code": "function safeRender(items){ return items.map(x=>`<li>${he.encode(String(x))}</li>`).join(''); }"
+    },
+    {
+      "name": "Dazala",
+      "category": "A03: Injection (Filter Evasion XSS)",
+      "vulnerable_code": "function sanitize(s){ return s.replace(/script|onerror/gi,''); } // ❌ naive blacklist\napp.get('/show',(req,res)=>res.send(`<div>${sanitize(req.query.v)}</div>`));",
+      "verification": "it('uses robust sanitizer',()=>{ const out=defend('<svg onload=1>'); expect(out).toContain('&lt;svg'); });",
+      "hardened_code": "import {sanitize} from 'isomorphic-dompurify'; app.get('/show',(req,res)=>{ const safe=sanitize(String(req.query.v||'')); res.send(`<div>${safe}</div>`); });"
+    },
+    {
+      "name": "Notflix",
+      "category": "A03: Injection (SQLi login)",
+      "vulnerable_code": "app.post('/login', async (req,res)=>{ const {username,password}=req.body; const q=`SELECT * FROM users WHERE username='${username}' AND password='${password}'`; const u=await db.get(q); return u?res.json({ok:true}):res.status(401).json({ok:false}); });",
+      "verification": "it('rejects bogus login', async ()=>{ const r=await request(app).post('/login').send({username:'x',password:'y'}); expect(r.body.ok).toBe(false); });",
+      "hardened_code": "import bcrypt from 'bcrypt'; app.post('/login', async (req,res)=>{ const {username,password}=req.body; const u=await db.get('SELECT id,username,pwd_hash FROM users WHERE username=?',[username]); if(!u) return res.status(401).json({ok:false}); const ok=await bcrypt.compare(password,u.pwd_hash); return ok?res.json({ok:true}):res.status(401).json({ok:false}); });"
+    },
+    {
+      "name": "Fakebook v2",
+      "category": "A03: Injection (SQLi search)",
+      "vulnerable_code": "app.get('/search', async (req,res)=>{ const term=req.query.q; const rows=await db.all(`SELECT * FROM posts WHERE body LIKE '%${term}%'`); res.json(rows); });",
+      "verification": "it('resolves search via parameters', async ()=>{ const r=await request(app).get('/search?q=test'); expect(r.status).toBe(200); });",
+      "hardened_code": "app.get('/search', async (req,res)=>{ const term=`%${req.query.q||''}%`; const rows=await db.all('SELECT * FROM posts WHERE body LIKE ?',[term]); res.json(rows); });"
+    },
+    {
+      "name": "SQLi Basics",
+      "category": "A03: Injection",
+      "vulnerable_code": "app.get('/user', async (req,res)=>{ const name=req.query.name; const row=await db.get(`SELECT * FROM users WHERE username='${name}'`); res.json(row||{}); });",
+      "verification": "it('uses parameter binding', async ()=>{ const r=await request(app).get('/user?name=alice'); expect(r.status).toBe(200); });",
+      "hardened_code": "app.get('/user', async (req,res)=>{ const name=String(req.query.name||''); const row=await db.get('SELECT * FROM users WHERE username=?',[name]); res.json(row||{}); });"
+    },
+    {
+      "name": "SQLi Basics Two",
+      "category": "A03: Injection",
+      "vulnerable_code": "app.post('/auth', async (req,res)=>{ const {u,p}=req.body; const q=`SELECT * FROM users WHERE u='${u}' AND (p='${p}' OR '1'='2')`; const row=await db.get(q); return row?res.json({ok:true}):res.status(401).json({ok:false}); });",
+      "verification": "it('does not allow boolean trickery', async ()=>{ const r=await request(app).post('/auth').send({u:'x',p:'y'}); expect(r.body.ok).toBe(false); });",
+      "hardened_code": "app.post('/auth', async (req,res)=>{ const {u,p}=req.body; const row=await db.get('SELECT id,pwd_hash FROM users WHERE u=?',[u]); if(!row) return res.status(401).json({ok:false}); const ok=await bcrypt.compare(p,row.pwd_hash); return ok?res.json({ok:true}):res.status(401).json({ok:false}); });"
+    },
+    {
+      "name": "Logging Lab",
+      "category": "A09: Logging & Monitoring Failures",
+      "vulnerable_code": "logger.info('login_attempt',{user:req.body.username,password:req.body.password,auth:req.headers.authorization});",
+      "verification": "it('redacts sensitive values',()=>{ const out=redact({password:'secret',authorization:'Bearer abc'}); expect(out).not.toMatch(/secret|Bearer abc/); });",
+      "hardened_code": "logger.info('login_attempt',{user:String(req.body.username||'').slice(0,80),hasPassword:Boolean(req.body.password),hasAuthHeader:Boolean(req.headers.authorization),ip:req.ip});"
+    },
+    {
+      "name": "Regex Practice",
+      "category": "A05: Security Misconfiguration",
+      "vulnerable_code": "app.post('/user', (req,res)=>{ const u=req.body.username; if(/.+/.test(u)) return res.json({ok:true}); res.status(400).json({ok:false}); });",
+      "verification": "it('enforces bounded validation',()=>{ expect(validate('')).toBe(false); expect(validate('a'.repeat(129))).toBe(false); });",
+      "hardened_code": "function validate(u){ return /^[a-zA-Z0-9_]{3,32}$/.test(u); } app.post('/user',(req,res)=>{ if(!validate(String(req.body.username||''))) return res.sendStatus(422); res.json({ok:true}); });"
+    },
+    {
+      "name": "JWT Middleware Lab",
+      "category": "A07: Identification & Authentication Failures",
+      "vulnerable_code": "function parseTokenVuln(t){ const h=JSON.parse(Buffer.from(t.split('.')[0],'base64url').toString()); if(h.alg==='none') return jwt.decode(t); return jwt.verify(t,pickKey(h.alg)); }",
+      "verification": "it('rejects unsigned/tampered tokens',()=>{ expect(()=>verifyStrict(forgeUnsignedToken())).toThrow(); });",
+      "hardened_code": "function verifyStrict(t){ return jwt.verify(t, process.env.JWT_PUBLIC_KEY, { algorithms:['RS256'], issuer:'mimosa.example', audience:'mimosa-client' }); }"
+    },
+    {
+      "name": "Queue Isolation",
+      "category": "A05: Security Misconfiguration",
+      "vulnerable_code": "app.post('/enqueue', requireAuth, async (req,res)=>{ await sqs.send({QueueUrl:process.env.GLOBAL_Q, MessageBody:JSON.stringify(req.body)}); res.json({ok:true}); });",
+      "verification": "it('routes to tenant-isolated queue', async ()=>{ const r=await tA.post('/enqueue').send({msg:'x'}); expect(r.status).toBe(200); /* and message visible only to tenant A consumer */ });",
+      "hardened_code": "app.post('/enqueue', requireAuth, async (req,res)=>{ const q=tenantQueueFor(req.user.tenantId); await sqs.send({QueueUrl:q, MessageBody:JSON.stringify(req.body)}); res.json({ok:true}); });"
+    }
+  ]
+}

@@ -1,0 +1,593 @@
+{
+  "A01: Broken Access Control": {
+    "Doodle Drive": {
+      "orientation": "This lab introduces Insecure Direct Object Reference (IDOR). Think about how resources (like documents or user profiles) are referenced in a system.",
+      "surface": "Observe the URL and query parameters when you load your own file. Does the request include a numeric or sequential identifier like id=123?",
+      "context": "Try modifying the ID parameter to a different number. Does it let you view another user’s file without permission?",
+      "defense": "Server-side checks are required. Never rely on obscurity. Enforce authorization rules so that each user can only access their own records.",
+      "assessment": {
+        "objectives": [
+          "Explain what IDOR is and why it occurs.",
+          "Identify object references that must be authorized.",
+          "Describe server-side controls that prevent IDOR."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which control BEST prevents IDOR?",
+            "options": [
+              "A) Obfuscate IDs with base64",
+              "B) Rate limit the endpoint",
+              "C) Enforce object-level authorization on the server",
+              "D) Minify client JavaScript"
+            ],
+            "answer": "C",
+            "explain": "Only server-side object-level authorization guarantees users can access only their resources."
+          }
+        ],
+        "task": "Review a GET /file?id={ID} handler and write pseudocode to verify the resource’s owner_id equals the authenticated user’s id before returning data.",
+        "rubric": {
+          "excellent": "Checks authenticated user; queries with both id AND owner; returns 403 when not owner; no string concatenation.",
+          "adequate": "Performs owner check but may rely on client-provided user id.",
+          "needs_improvement": "No ownership check or done only on the client."
+        }
+      }
+    },
+    "Bad Teacher": {
+      "orientation": "This scenario highlights privilege escalation through IDOR in marksheets.",
+      "surface": "Inspect how teachers or admins access student marksheets. Is the student ID exposed in the request?",
+      "context": "Change the student ID to see if you can fetch another student’s marks. What does this reveal about access controls?",
+      "defense": "Implement object-level authorization checks. Teachers should only access marksheets assigned to them; enforce RBAC or ABAC policies.",
+      "assessment": {
+        "objectives": [
+          "Differentiate role checks vs. object ownership checks.",
+          "Design RBAC for class/teacher/student relations."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "What is REQUIRED in addition to 'role=teacher' to prevent viewing another class’s marksheet?",
+            "options": [
+              "A) Obfuscated student IDs",
+              "B) CSRF tokens",
+              "C) Authorization that teacher teaches the student’s class",
+              "D) Client-side checks"
+            ],
+            "answer": "C",
+            "explain": "Role alone is insufficient; you must verify the relationship (teacher ↔ class ↔ student)."
+          }
+        ],
+        "task": "Sketch an authorization policy: a teacher may GET marksheets only for students in classes they own; write a SQL example with WHERE class_id IN (…teacher_classes…).",
+        "rubric": {
+          "excellent": "Includes explicit relationship checks (teacher ↔ class ↔ student) and denies by default.",
+          "adequate": "Has relationship idea but incomplete query conditions.",
+          "needs_improvement": "Relies only on role or client-provided class id."
+        }
+      }
+    }
+  },
+  "A03: Injection": {
+    "Notflix": {
+      "orientation": "Classic SQL Injection through a login form.",
+      "surface": "Look at how the login query is built. Does it concatenate raw username/password input?",
+      "context": "Try entering `' OR '1'='1` into the username field. If you bypass authentication, the app is vulnerable.",
+      "defense": "Mitigate with parameterized queries (prepared statements), proper error handling, and least-privilege DB accounts.",
+      "assessment": {
+        "objectives": [
+          "Recognize string-concatenated SQL queries.",
+          "Explain how prepared statements prevent SQLi."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which statement about prepared statements is TRUE?",
+            "options": [
+              "A) They only work for SELECT queries",
+              "B) They treat user input as data, not code",
+              "C) They are optional if inputs are trimmed",
+              "D) They require disabling indexes"
+            ],
+            "answer": "B",
+            "explain": "Prepared statements separate code from data, neutralizing injection."
+          }
+        ],
+        "task": "Rewrite a vulnerable `SELECT * FROM users WHERE username = '"+ "\" + u + \"" + "' AND pwd = '" + "\" + p + \"" + "'` into a parameterized query in your language of choice.",
+        "rubric": {
+          "excellent": "Uses placeholders, binds both username and password, and handles errors without leaking SQL.",
+          "adequate": "Parameterizes username but partially handles password/errors.",
+          "needs_improvement": "Still concatenates user inputs."
+        }
+      }
+    },
+    "Fakebook v2": {
+      "orientation": "SQL Injection via search functionality.",
+      "surface": "Perform a search. What query might be executed behind the scenes? Is user input sanitized?",
+      "context": "Attempt a UNION-based injection like `' UNION SELECT username, password FROM users --`.",
+      "defense": "Defend using parameterized queries, whitelisted search columns, and escaping of user input.",
+      "assessment": {
+        "objectives": [
+          "Identify UNION-based SQLi risks in search endpoints.",
+          "Apply whitelisting for sortable/filterable fields."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "What is the safest way to allow user-selected sort fields?",
+            "options": [
+              "A) Concatenate whatever the user sends",
+              "B) Escape quotes in the sort parameter",
+              "C) Map user input to a fixed whitelist of column names",
+              "D) Remove sorting entirely"
+            ],
+            "answer": "C",
+            "explain": "Whitelisting ensures only expected, vetted column names are used."
+          }
+        ],
+        "task": "Implement a sort-field whitelist: map user input to {name, date, likes}; reject unknown fields before building the ORDER BY clause.",
+        "rubric": {
+          "excellent": "Strict mapping with default fallback, no raw concatenation.",
+          "adequate": "Whitelist exists but missing default handling.",
+          "needs_improvement": "Relies on escaping without a whitelist."
+        }
+      }
+    },
+    "SQLi Basics Two": {
+      "orientation": "Operator precedence and logic exploitation in SQL.",
+      "surface": "Notice that comments are blocked. What happens if you combine OR and AND logic cleverly?",
+      "context": "Construct complex boolean expressions to influence query results.",
+      "defense": "Prepared statements remove this entire class of bugs. Don’t rely on regex filtering or blacklists.",
+      "assessment": {
+        "objectives": [
+          "Explain why blacklists fail against SQLi.",
+          "Demonstrate that logic tricks still bypass naive filters."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Why do regex blacklists fail for SQLi?",
+            "options": [
+              "A) Regex is slower than SQL",
+              "B) Attackers can encode or restructure inputs",
+              "C) Databases ignore regex",
+              "D) Blacklists disable indexes"
+            ],
+            "answer": "B",
+            "explain": "Attackers can bypass specific patterns with encodings and alternate syntax."
+          }
+        ],
+        "task": "Write a one-paragraph critique of blacklist filtering and propose parameterization + allowlists as replacements.",
+        "rubric": {
+          "excellent": "Clearly articulates blacklist weaknesses and proposes parameterization with examples.",
+          "adequate": "Mentions parameterization but lacks depth.",
+          "needs_improvement": "Suggests more regex without structural fix."
+        }
+      }
+    },
+    "Biography": {
+      "orientation": "Stored XSS vulnerability in profile fields.",
+      "surface": "Edit your biography/profile and insert HTML. Does it appear unescaped when reloaded?",
+      "context": "Consider how different contexts (HTML, attribute, JS) require different encoders.",
+      "defense": "Escape output contextually and sanitize stored data.",
+      "assessment": {
+        "objectives": [
+          "Differentiate stored vs. reflected XSS.",
+          "Choose the correct encoder for each output context."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which is the BEST defense for HTML body context?",
+            "options": [
+              "A) URL-encode everything",
+              "B) HTML-escape output and use a sanitizer",
+              "C) Disable cookies",
+              "D) Use HTTP/2"
+            ],
+            "answer": "B",
+            "explain": "Context-aware HTML escaping plus sanitization prevents script execution."
+          }
+        ],
+        "task": "List the encoders you would use for (1) HTML body, (2) HTML attribute, (3) JavaScript string, and why.",
+        "rubric": {
+          "excellent": "Correct encoders for each context with rationale.",
+          "adequate": "Mostly correct, minor confusion on one context.",
+          "needs_improvement": "Uses the same encoder for all contexts."
+        }
+      }
+    },
+    "XSS Basics": {
+      "orientation": "Data is reflected directly in the response.",
+      "surface": "Validate whether user input is written back without encoding.",
+      "context": "Reflect on where the value lands: HTML, attribute, or JS context.",
+      "defense": "Use proper output encoding based on context.",
+      "assessment": {
+        "objectives": [
+          "Detect reflected XSS points.",
+          "Apply correct output encoding strategy."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which landing context needs JS string escaping?",
+            "options": ["A) HTML body", "B) style attribute", "C) script string literal", "D) URL path"],
+            "answer": "C",
+            "explain": "Values embedded in JS strings require JS escaping."
+          }
+        ],
+        "task": "Given a template snippet, mark the exact output context and write the correct encoder call.",
+        "rubric": {
+          "excellent": "Accurately identifies contexts and encoders.",
+          "adequate": "Identifies contexts but encoder mapping is partial.",
+          "needs_improvement": "Context misidentified or encoder is wrong."
+        }
+      }
+    },
+    "Christmas Workshop": {
+      "orientation": "Look at dynamic DOM updates via JavaScript.",
+      "surface": "If the app uses innerHTML, that’s a red flag.",
+      "context": "Consider how untrusted input can become executable when assigned to innerHTML.",
+      "defense": "Use textContent or safe templating libraries.",
+      "assessment": {
+        "objectives": [
+          "Explain risks of innerHTML.",
+          "Refactor to safe DOM APIs."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which API is safest for plain text insertion?",
+            "options": ["A) innerHTML", "B) outerHTML", "C) textContent", "D) document.write"],
+            "answer": "C",
+            "explain": "`textContent` does not interpret HTML and is safe for plain text."
+          }
+        ],
+        "task": "Replace two innerHTML uses with safe alternatives and note any styling adjustments needed.",
+        "rubric": {
+          "excellent": "Removes all innerHTML, uses textContent/DOM APIs correctly.",
+          "adequate": "Fixes some instances but leaves risky paths.",
+          "needs_improvement": "Keeps innerHTML for untrusted data."
+        }
+      }
+    },
+    "Syndica": {
+      "orientation": "Client-side template injection risks.",
+      "surface": "Identify where user input is interpolated.",
+      "context": "Can expressions or event handlers be injected via templates?",
+      "defense": "Use safe templating + escaping by default.",
+      "assessment": {
+        "objectives": [
+          "Recognize template injection points.",
+          "Apply safe templating patterns."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which template strategy reduces XSS?",
+            "options": ["A) Disable CSP", "B) Escape by default; explicit unescape when safe", "C) Allow inline event handlers", "D) Use eval for templates"],
+            "answer": "B",
+            "explain": "Default-escape templating minimizes accidental code execution."
+          }
+        ],
+        "task": "Configure your template engine to escape by default; show one example of safe, explicit HTML rendering.",
+        "rubric": {
+          "excellent": "Default-escape enabled, explicit safe HTML path documented.",
+          "adequate": "Partial configuration; some unescaped paths remain.",
+          "needs_improvement": "No default escaping; relies on manual ad hoc escaping."
+        }
+      }
+    },
+    "Dazala": {
+      "orientation": "Bypass naïve XSS filters.",
+      "surface": "Study which patterns are blocked and which slip through.",
+      "context": "Consider encodings, case, event handlers, and SVG/MathML.",
+      "defense": "Use proven sanitizers; never rely on blacklists.",
+      "assessment": {
+        "objectives": [
+          "Explain limitations of blacklist filters.",
+          "Recommend library-grade sanitization."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Why is a custom regex XSS filter risky?",
+            "options": [
+              "A) It blocks too much legitimate HTML",
+              "B) Browsers are inconsistent and HTML is complex",
+              "C) It is slower than libraries",
+              "D) It disables HTTPS"
+            ],
+            "answer": "B",
+            "explain": "HTML parsing quirks and encodings make regex approaches brittle."
+          }
+        ],
+        "task": "Replace the custom filter with a well-maintained sanitizer and document configuration.",
+        "rubric": {
+          "excellent": "Uses a reputable lib with safe defaults; tests main vectors.",
+          "adequate": "Library added but defaults not reviewed.",
+          "needs_improvement": "Keeps custom regex; no tests."
+        }
+      }
+    }
+  },
+  "A04: Insecure Design": {
+    "Pong": {
+      "orientation": "Game trust issue: client-side variables drive the score.",
+      "surface": "Open browser dev tools. Inspect JavaScript variables controlling the game score.",
+      "context": "Modify these values or intercept requests. Can you inflate your score or trigger game logic changes?",
+      "defense": "Never trust the client. Move scoring logic server-side and validate before storing results.",
+      "assessment": {
+        "objectives": [
+          "Describe why client-side trust is unsafe.",
+          "Propose server-side validation of results."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "What’s the strongest fix for cheating via client vars?",
+            "options": [
+              "A) Minify JS",
+              "B) Obfuscate variables",
+              "C) Validate score server-side before persisting",
+              "D) Disable dev tools"
+            ],
+            "answer": "C",
+            "explain": "Server-side validation makes tampering ineffective."
+          }
+        ],
+        "task": "Design an API endpoint that accepts scores and validates server-side rules before saving.",
+        "rubric": {
+          "excellent": "Server enforces rules, rejects impossible scores, logs anomalies.",
+          "adequate": "Adds basic checks but misses edge cases.",
+          "needs_improvement": "Accepts any client-provided score."
+        }
+      }
+    }
+  },
+  "A05: Security Misconfiguration": {
+    "Poison Apples": {
+      "orientation": "Cross-Site Request Forgery (CSRF) scenario.",
+      "surface": "Check whether sensitive form actions include a CSRF token.",
+      "context": "Think how an attacker could trigger the same action cross-site.",
+      "defense": "Defend with CSRF tokens, SameSite cookies, and origin checking.",
+      "assessment": {
+        "objectives": [
+          "Explain CSRF and preconditions (cookies, auth).",
+          "Implement CSRF token rotation and verification."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which combo best reduces CSRF risk?",
+            "options": [
+              "A) SameSite=Lax + CSRF token for state-changing POSTs",
+              "B) Disable HTTPS",
+              "C) Rely only on CAPTCHA",
+              "D) Store CSRF token in localStorage"
+            ],
+            "answer": "A",
+            "explain": "SameSite helps, but tokens are essential for POSTs that change state."
+          }
+        ],
+        "task": "Add a server-generated CSRF token to a POST form and verify it on submit; include SameSite cookie settings.",
+        "rubric": {
+          "excellent": "Token bound to session/user, verified server-side; SameSite set; rejects missing/invalid tokens.",
+          "adequate": "Token present but validation incomplete.",
+          "needs_improvement": "No token or only client-side checks."
+        }
+      }
+    },
+    "Nuclear Winter": {
+      "orientation": "Cookie tampering challenge.",
+      "surface": "Inspect cookies for role/privilege flags.",
+      "context": "What happens if a value is modified client-side?",
+      "defense": "Sign/encrypt cookies; verify server-side state.",
+      "assessment": {
+        "objectives": [
+          "Identify insecure client-trusted cookies.",
+          "Implement signed/encrypted cookies."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which is MOST secure for role data?",
+            "options": [
+              "A) Plain cookie with 'role=admin'",
+              "B) Base64-encoded cookie",
+              "C) Signed cookie validated server-side",
+              "D) Cookie with long random value but no signature"
+            ],
+            "answer": "C",
+            "explain": "Signing prevents tampering; server validates integrity."
+          }
+        ],
+        "task": "Write middleware that rejects requests if cookie signature fails; rotate the signing key safely.",
+        "rubric": {
+          "excellent": "Uses HMAC/signature, key rotation plan, rejects invalid cookies.",
+          "adequate": "Signs cookies but lacks rotation/error handling.",
+          "needs_improvement": "Relies on base64/obfuscation."
+        }
+      }
+    },
+    "Regex Practice": {
+      "orientation": "App relies on regex validation for input.",
+      "surface": "Test length, charset, and boundary cases.",
+      "context": "Do rules align with business constraints?",
+      "defense": "Server-side validation with clear error messages.",
+      "assessment": {
+        "objectives": [
+          "Design resilient input validation.",
+          "Avoid catastrophic backtracking and over-permissive patterns."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which regex is safer for an email-like field?",
+            "options": [
+              "A) `.*`",
+              "B) `^.+$`",
+              "C) A bounded, tested pattern with length limits",
+              "D) No regex at all"
+            ],
+            "answer": "C",
+            "explain": "Bounded, tested patterns reduce denial-of-service and false accepts."
+          }
+        ],
+        "task": "Propose a bounded regex and server-side checks for a username field; include tests.",
+        "rubric": {
+          "excellent": "Length bounds, charset rules, tests for edge cases.",
+          "adequate": "Regex present, few tests.",
+          "needs_improvement": "Overly broad or catastrophic regex."
+        }
+      }
+    },
+    "Faster Than Light": {
+      "orientation": "Timing and UI logic rely on client behavior.",
+      "surface": "Check if server validates transitions.",
+      "context": "Can quick actions bypass checks?",
+      "defense": "Move checks server-side; rate-limit and queue operations.",
+      "assessment": {
+        "objectives": [
+          "Spot client-only logic risks.",
+          "Apply server-side validation and rate limits."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "What primarily fixes racey client-side checks?",
+            "options": ["A) Faster JS", "B) Server-side state validation", "C) Bigger buttons", "D) Disabling caching"],
+            "answer": "B",
+            "explain": "Only the server can authoritatively validate state transitions."
+          }
+        ],
+        "task": "Add idempotency keys and server-side state checks to a multi-step action.",
+        "rubric": {
+          "excellent": "Server enforces order/idempotency; logs anomalies.",
+          "adequate": "Partial server checks; missing idempotency.",
+          "needs_improvement": "Relies on client timing alone."
+        }
+      }
+    },
+    "Queue Isolation": {
+      "orientation": "Shared message queue misconfiguration.",
+      "surface": "Are tenants truly isolated?",
+      "context": "Could one tenant read another’s messages?",
+      "defense": "Separate queues + strict IAM per tenant.",
+      "assessment": {
+        "objectives": [
+          "Design tenant-isolated messaging.",
+          "Apply least-privilege IAM."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Best pattern for multi-tenant queues?",
+            "options": ["A) One global queue", "B) Per-tenant queues + IAM scoping", "C) Randomized message IDs", "D) Base64 payloads"],
+            "answer": "B",
+            "explain": "Physical/virtual isolation with IAM prevents cross-tenant reads."
+          }
+        ],
+        "task": "Propose an IAM policy that limits a service role to only its tenant’s queue.",
+        "rubric": {
+          "excellent": "Tight resource ARNs, no wildcards; deny by default.",
+          "adequate": "Mostly limited, some broad actions left.",
+          "needs_improvement": "Wildcard resources/actions."
+        }
+      }
+    }
+  },
+  "A07: Identification & Authentication Failures": {
+    "Into the Shadows": {
+      "orientation": "Weak authentication bypass scenario.",
+      "surface": "Test the login workflow. Is MFA enforced consistently?",
+      "context": "Try skipping MFA or using replayed tokens.",
+      "defense": "Always validate tokens, enforce MFA, and lock after repeated failures.",
+      "assessment": {
+        "objectives": [
+          "Describe session fixation and token replay risks.",
+          "Enforce consistent MFA checks."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which control resists token replay most directly?",
+            "options": ["A) Longer passwords", "B) Token binding / rotating session IDs", "C) Minified JS", "D) CDN caching"],
+            "answer": "B",
+            "explain": "Token binding/rotation reduces usefulness of a captured token."
+          }
+        ],
+        "task": "Add a server rule: rotate session IDs on login and after privilege change; invalidate old tokens.",
+        "rubric": {
+          "excellent": "Implements rotation + invalidation with tests.",
+          "adequate": "Rotates but misses invalidation.",
+          "needs_improvement": "No rotation/invalidation."
+        }
+      }
+    },
+    "JWT Middleware Lab": {
+      "orientation": "JWT mishandling vulnerability.",
+      "surface": "Inspect JWT in browser dev tools or intercept requests.",
+      "context": "Modify the `alg` header or claims and resend. Does the server accept?",
+      "defense": "Always validate JWT signature with strong algorithms and check expiry/issuer claims.",
+      "assessment": {
+        "objectives": [
+          "Explain HS256 vs RS256 and alg confusion attacks.",
+          "Validate exp/iss/aud claims on the server."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "What’s the safest validation for JWTs?",
+            "options": [
+              "A) Trust header.alg without checking keys",
+              "B) Verify signature with expected alg + enforce exp/iss/aud",
+              "C) Only check exp",
+              "D) Skip signature for internal services"
+            ],
+            "answer": "B",
+            "explain": "Lock the algorithm and validate signature and critical claims."
+          }
+        ],
+        "task": "Write middleware that rejects tokens if alg mismatches expected, signature fails, or exp/iss/aud invalid.",
+        "rubric": {
+          "excellent": "All checks enforced; unit tests cover invalid tokens.",
+          "adequate": "Signature enforced but weak claim checks.",
+          "needs_improvement": "Accepts tokens without verifying signature/claims."
+        }
+      }
+    }
+  },
+  "A09: Logging & Monitoring Failures": {
+    "Logging Lab": {
+      "orientation": "Challenge on weak logging practices.",
+      "surface": "Trigger some error conditions with malicious inputs.",
+      "context": "Check if logs reveal sensitive data (passwords, tokens).",
+      "defense": "Log minimally, avoid PII, and use central monitoring with alerts.",
+      "assessment": {
+        "objectives": [
+          "Define useful security telemetry vs. sensitive data leakage.",
+          "Configure alerts on suspicious patterns."
+        ],
+        "knowledge_checks": [
+          {
+            "type": "mcq",
+            "question": "Which is safe to log?",
+            "options": [
+              "A) Full JWT",
+              "B) Password hashes",
+              "C) Event type and user id (pseudonymous)",
+              "D) Credit card numbers"
+            ],
+            "answer": "C",
+            "explain": "Log metadata, not secrets or raw credentials."
+          }
+        ],
+        "task": "Add structured logging for auth events; include event type, pseudonymous user id, request id; exclude secrets.",
+        "rubric": {
+          "excellent": "Structured logs, no secrets, alert rules defined.",
+          "adequate": "Structured logs but few filters/alerts.",
+          "needs_improvement": "Unstructured logs or secret leakage."
+        }
+      }
+    }
+  }
+}
